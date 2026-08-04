@@ -1,0 +1,14 @@
+node_modules/
+dist/
+
+# Local-only environment overrides
+*.local
+
+# VCS / editor / OS
+.git/
+.gitignore
+.DS_Store
+
+Dockerfile
+.dockerignore
+README.md
