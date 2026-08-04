@@ -1,5 +1,9 @@
 // Transport layer for the backend API. Feature modules build on top of this
 // (see src/features/*/api.ts); it holds no domain knowledge itself.
+//
+// Auth is an HttpOnly cookie set by the backend — never put tokens in
+// localStorage / sessionStorage. Every request sends credentials so the
+// browser attaches that cookie.
 
 const BASE = (
   import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000"
@@ -12,15 +16,9 @@ export function apiUrl(path: string): string {
 /** Raised when the backend rejects our identity, so the UI can sign out. */
 export class AuthError extends Error {}
 
-let authToken: string | null = null;
-
-export function setAuthToken(token: string | null) {
-  authToken = token;
-}
-
+/** JSON Content-Type only — the session cookie carries auth. */
 export function authHeaders(json = false): Record<string, string> {
   const h: Record<string, string> = {};
-  if (authToken) h.Authorization = `Bearer ${authToken}`;
   if (json) h["Content-Type"] = "application/json";
   return h;
 }
@@ -41,7 +39,10 @@ export async function request<T>(
   init: RequestInit = {},
   fallback = "Request failed.",
 ): Promise<T> {
-  const res = await fetch(apiUrl(path), init);
+  const res = await fetch(apiUrl(path), {
+    ...init,
+    credentials: "include",
+  });
   if (res.status === 401 || res.status === 403) {
     throw new AuthError(await detail(res, "You are not authorized."));
   }

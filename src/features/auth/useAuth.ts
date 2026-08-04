@@ -1,11 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
-import { setAuthToken } from "@/lib/apiClient";
-import { fetchMe } from "./api";
+import { createSession, destroySession, fetchMe } from "./api";
 import type { AdminUser } from "./types";
-
-// Session storage, not local storage: the token dies with the tab, and Google
-// ID tokens only last an hour anyway.
-const TOKEN_KEY = "jhmural_admin_token";
 
 export type AuthStatus = "loading" | "signed-out" | "signed-in";
 
@@ -14,18 +9,14 @@ export function useAuth() {
   const [status, setStatus] = useState<AuthStatus>("loading");
   const [error, setError] = useState<string | null>(null);
 
-  /** Validate a Google ID token with the backend and sign in on success. */
+  /** Hand a Google ID token to the backend; it stores it in an HttpOnly cookie. */
   const applyToken = useCallback(async (token: string) => {
-    setAuthToken(token);
     try {
-      const me = await fetchMe();
-      sessionStorage.setItem(TOKEN_KEY, token);
+      const me = await createSession(token);
       setUser(me);
       setStatus("signed-in");
       setError(null);
     } catch (err) {
-      setAuthToken(null);
-      sessionStorage.removeItem(TOKEN_KEY);
       setUser(null);
       setStatus("signed-out");
       setError(err instanceof Error ? err.message : "Sign-in failed.");
@@ -33,23 +24,37 @@ export function useAuth() {
   }, []);
 
   const signOut = useCallback((message?: string) => {
-    setAuthToken(null);
-    sessionStorage.removeItem(TOKEN_KEY);
+    // Fire-and-forget cookie clear; local state must clear even if the
+    // network call fails (expired cookie, offline, etc.).
+    void destroySession().catch(() => {});
     setUser(null);
     setStatus("signed-out");
     setError(message ?? null);
     window.google?.accounts.id.disableAutoSelect();
   }, []);
 
-  // Restore an existing session on load.
+  // Restore an existing HttpOnly-cookie session on load.
   useEffect(() => {
-    const stored = sessionStorage.getItem(TOKEN_KEY);
-    if (stored) {
-      applyToken(stored);
-    } else {
-      setStatus("signed-out");
-    }
-  }, [applyToken]);
+    let cancelled = false;
+    (async () => {
+      try {
+        const me = await fetchMe();
+        if (!cancelled) {
+          setUser(me);
+          setStatus("signed-in");
+          setError(null);
+        }
+      } catch {
+        if (!cancelled) {
+          setUser(null);
+          setStatus("signed-out");
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   return { user, status, error, applyToken, signOut, setError };
 }
