@@ -24,8 +24,6 @@ export function useAuth() {
   }, []);
 
   const signOut = useCallback((message?: string) => {
-    // Fire-and-forget cookie clear; local state must clear even if the
-    // network call fails (expired cookie, offline, etc.).
     void destroySession().catch(() => {});
     setUser(null);
     setStatus("signed-out");
